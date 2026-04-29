@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statsWindow: StatsWindowController?
     private var statusItem: NSStatusItem!
     private var loginItemMenuItem: NSMenuItem?
+    private var profileDisplayMenuItems: [ProfileDisplayMode: NSMenuItem] = [:]
 
     private let loginItemRegisteredKey = "rtr.loginItemRegistered"
 
@@ -150,11 +151,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let loginToggle = NSMenuItem(title: "Launch at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
         menu.addItem(loginToggle)
         loginItemMenuItem = loginToggle
+
+        let profileItem = NSMenuItem(title: "Chrome Profiles", action: nil, keyEquivalent: "")
+        profileItem.submenu = buildProfileDisplayMenu()
+        menu.addItem(profileItem)
+
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit rtr", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         for item in menu.items { item.target = self }
         menu.item(withTitle: "Quit rtr")?.target = NSApp
         statusItem.menu = menu
+    }
+
+    private func buildProfileDisplayMenu() -> NSMenu {
+        let submenu = NSMenu()
+        profileDisplayMenuItems.removeAll()
+        for mode in ProfileDisplayMode.allCases {
+            let item = NSMenuItem(title: mode.menuLabel,
+                                  action: #selector(selectProfileDisplay(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            submenu.addItem(item)
+            profileDisplayMenuItems[mode] = item
+        }
+        refreshProfileDisplayMenuState()
+        return submenu
+    }
+
+    private func refreshProfileDisplayMenuState() {
+        let current = Settings.profileDisplay
+        for (mode, item) in profileDisplayMenuItems {
+            item.state = (mode == current) ? .on : .off
+        }
+    }
+
+    @objc private func selectProfileDisplay(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let mode = ProfileDisplayMode(rawValue: raw) else { return }
+        Settings.profileDisplay = mode
+        BrowserCatalog.shared.refresh()
+        refreshProfileDisplayMenuState()
     }
 
     @objc private func openStats() {

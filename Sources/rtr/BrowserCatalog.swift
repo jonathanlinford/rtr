@@ -12,6 +12,19 @@ struct Browser: Hashable {
     let bundleID: String
     let appURL: URL
     let kind: Kind
+    /// For Chromium browsers: resolved path to the profile's GAIA avatar PNG, if any.
+    /// Always `nil` for non-Chromium kinds.
+    let chromiumAvatarURL: URL?
+
+    init(id: String, displayName: String, bundleID: String, appURL: URL,
+         kind: Kind, chromiumAvatarURL: URL? = nil) {
+        self.id = id
+        self.displayName = displayName
+        self.bundleID = bundleID
+        self.appURL = appURL
+        self.kind = kind
+        self.chromiumAvatarURL = chromiumAvatarURL
+    }
 
     var isChromium: Bool {
         if case .chromium = kind { return true }
@@ -107,6 +120,7 @@ final class BrowserCatalog {
         var result: [Browser] = []
         var groups: [BrowserGroup] = []
         let selfBundle = Bundle.main.bundleIdentifier ?? "com.jonny.rtr"
+        let displayMode = Settings.profileDisplay
 
         for appURL in appURLs {
             guard let bundle = Bundle(url: appURL),
@@ -119,24 +133,37 @@ final class BrowserCatalog {
             if let supportSubpath = chromiumBundles[bundleID] {
                 let profiles = ChromiumProfiles.load(supportSubpath: supportSubpath)
                 if !profiles.isEmpty {
-                    var profileBrowsers: [Browser] = []
-                    for p in profiles {
-                        let browser = Browser(
+                    let profileBrowsers = profiles.map { p in
+                        Browser(
                             id: "\(bundleID)#\(p.directory)",
                             displayName: "\(displayName) — \(p.name)",
                             bundleID: bundleID,
                             appURL: appURL,
-                            kind: .chromium(profileDir: p.directory, profileName: p.name)
+                            kind: .chromium(profileDir: p.directory, profileName: p.name),
+                            chromiumAvatarURL: p.avatarURL
                         )
-                        result.append(browser)
-                        profileBrowsers.append(browser)
                     }
-                    groups.append(BrowserGroup(
-                        displayName: displayName,
-                        bundleID: bundleID,
-                        appURL: appURL,
-                        browsers: profileBrowsers
-                    ))
+                    result.append(contentsOf: profileBrowsers)
+
+                    switch displayMode {
+                    case .grouped:
+                        groups.append(BrowserGroup(
+                            displayName: displayName,
+                            bundleID: bundleID,
+                            appURL: appURL,
+                            browsers: profileBrowsers
+                        ))
+                    case .flat:
+                        // One group per profile, so each becomes its own row.
+                        for b in profileBrowsers {
+                            groups.append(BrowserGroup(
+                                displayName: b.displayName,
+                                bundleID: bundleID,
+                                appURL: appURL,
+                                browsers: [b]
+                            ))
+                        }
+                    }
                     continue
                 }
             }

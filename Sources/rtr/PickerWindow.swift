@@ -370,9 +370,9 @@ final class BrowserRowView: NSView {
         hotkeyBadge.alignment = .center
         hotkeyBadge.translatesAutoresizingMaskIntoConstraints = false
 
-        iconView.image = NSWorkspace.shared.icon(forFile: group.appURL.path)
         iconView.imageScaling = .scaleProportionallyDown
         iconView.translatesAutoresizingMaskIntoConstraints = false
+        applyIcon(for: currentBrowser)
 
         nameLabel.stringValue = group.displayName
         nameLabel.font = .systemFont(ofSize: 13, weight: .medium)
@@ -412,6 +412,7 @@ final class BrowserRowView: NSView {
             pill.onSelect = { [weak self] id in
                 guard let self, let b = self.group.browsers.first(where: { $0.id == id }) else { return }
                 self.currentBrowser = b
+                self.applyIcon(for: b)
                 self.onChoose?(b)    // auto-launch on profile change
             }
             pill.translatesAutoresizingMaskIntoConstraints = false
@@ -484,6 +485,35 @@ final class BrowserRowView: NSView {
 
     func trigger() {
         onChoose?(currentBrowser)
+    }
+
+    /// Show the GAIA avatar (circular) for chromium profiles when available,
+    /// otherwise the app's regular icon.
+    private func applyIcon(for browser: Browser) {
+        if let avatarURL = browser.chromiumAvatarURL,
+           let avatar = NSImage(contentsOf: avatarURL) {
+            iconView.image = Self.circular(avatar, size: NSSize(width: 26, height: 26))
+            return
+        }
+        iconView.image = NSWorkspace.shared.icon(forFile: group.appURL.path)
+    }
+
+    /// Mask `image` to a circle of `size`, redrawing into a fresh bitmap. Returns
+    /// nil only if the offscreen context can't be created — in practice always
+    /// returns an image.
+    private static func circular(_ image: NSImage, size: NSSize) -> NSImage {
+        let out = NSImage(size: size)
+        out.lockFocus()
+        let rect = NSRect(origin: .zero, size: size)
+        NSBezierPath(ovalIn: rect).addClip()
+        image.draw(in: rect,
+                   from: .zero,
+                   operation: .copy,
+                   fraction: 1.0,
+                   respectFlipped: true,
+                   hints: [.interpolation: NSImageInterpolation.high.rawValue])
+        out.unlockFocus()
+        return out
     }
 }
 

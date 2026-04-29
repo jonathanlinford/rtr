@@ -89,4 +89,59 @@ struct ChromiumProfilesTests {
         let url = URL(fileURLWithPath: "/var/empty/does-not-exist/Local State")
         #expect(ChromiumProfiles.load(stateURL: url).count == 0)
     }
+
+    @Test func parsesGaiaPictureFileName() {
+        let json = """
+        {
+          "profile": {
+            "info_cache": {
+              "Default": {
+                "name": "Personal",
+                "gaia_picture_file_name": "Google Profile Picture.png"
+              },
+              "Profile 2": { "name": "Work" }
+            }
+          }
+        }
+        """
+        let result = ChromiumProfiles.parse(localStateData: data(json))
+        let byDir = Dictionary(uniqueKeysWithValues: result.map { ($0.directory, $0) })
+        #expect(byDir["Default"]?.avatarFileName == "Google Profile Picture.png")
+        #expect(byDir["Profile 2"]?.avatarFileName == nil)
+        // parse() never resolves URLs (it doesn't know paths).
+        #expect(byDir["Default"]?.avatarURL == nil)
+    }
+
+    @Test func loadResolvesAvatarURLOnlyWhenFileExists() throws {
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("rtr-chromium-\(UUID().uuidString)", isDirectory: true)
+        let support = tmp.appendingPathComponent("Chromium")
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        // Profile A has an avatar file on disk; Profile B claims one but the file is missing.
+        let profileADir = support.appendingPathComponent("Default")
+        try FileManager.default.createDirectory(at: profileADir, withIntermediateDirectories: true)
+        let avatarPath = profileADir.appendingPathComponent("Google Profile Picture.png")
+        try Data([0x89, 0x50, 0x4E, 0x47]).write(to: avatarPath) // PNG-ish bytes; existence is what matters
+
+        let stateURL = support.appendingPathComponent("Local State")
+        try """
+        {
+          "profile": {
+            "info_cache": {
+              "Default":   { "name": "Personal", "gaia_picture_file_name": "Google Profile Picture.png" },
+              "Profile 2": { "name": "Work",     "gaia_picture_file_name": "Google Profile Picture.png" }
+            }
+          }
+        }
+        """.write(to: stateURL, atomically: true, encoding: .utf8)
+
+        let result = ChromiumProfiles.load(stateURL: stateURL, supportRoot: support)
+        let byDir = Dictionary(uniqueKeysWithValues: result.map { ($0.directory, $0) })
+        #expect(byDir["Default"]?.avatarURL == avatarPath)
+        // File doesn't exist for Profile 2 → URL not attached.
+        #expect(byDir["Profile 2"]?.avatarURL == nil)
+        #expect(byDir["Profile 2"]?.avatarFileName == "Google Profile Picture.png")
+    }
 }
