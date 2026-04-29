@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import rtr
 
-@Suite("Settings.profileDisplay persistence")
+@Suite("Settings.profileDisplay persistence", .serialized)
 struct SettingsTests {
 
     @Test func rawValuesAreStable() {
