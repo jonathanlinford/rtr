@@ -1,0 +1,70 @@
+name: Release
+
+# Build a .app bundle, zip it, and attach to a GitHub Release whenever a
+# version tag (v*) is pushed. The build is unsigned/ad-hoc-signed — see
+# README/PRIVACY for distribution caveats.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v0.2.0). If empty, uses the current commit."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & release rtr.app
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Determine version
+        id: version
+        run: |
+          ref="${GITHUB_REF##*/}"
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          elif [[ "$ref" == v* ]]; then
+            tag="$ref"
+          else
+            tag="v0.0.0-$(git rev-parse --short HEAD)"
+          fi
+          version="${tag#v}"
+          echo "tag=$tag"         >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build .app
+        run: |
+          ./build.sh
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.version.outputs.version }}" \
+              build/rtr.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion           ${{ steps.version.outputs.version }}" \
+              build/rtr.app/Contents/Info.plist
+
+      - name: Zip
+        run: |
+          cd build
+          ditto -c -k --keepParent rtr.app rtr-${{ steps.version.outputs.version }}.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtr-${{ steps.version.outputs.version }}
+          path: build/rtr-${{ steps.version.outputs.version }}.zip
+
+      - name: Create / update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: build/rtr-${{ steps.version.outputs.version }}.zip
