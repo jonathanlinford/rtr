@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statsWindow: StatsWindowController?
     private var statusItem: NSStatusItem!
     private var loginItemMenuItem: NSMenuItem?
+    private var appearanceMenuItems: [AppearanceMode: NSMenuItem] = [:]
 
     private let loginItemRegisteredKey = "rtr.loginItemRegistered"
 
@@ -13,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Must initialize before registering the AE handler — kAEGetURL for the URL
         // that *caused* the launch is dispatched between will/didFinishLaunching, so
         // picker/config/catalog have to exist before we register to receive it.
+        Theme.apply()
         Config.shared.load()
         BrowserCatalog.shared.refresh()
         Stats.shared.start()
@@ -150,11 +152,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let loginToggle = NSMenuItem(title: "Launch at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
         menu.addItem(loginToggle)
         loginItemMenuItem = loginToggle
+
+        let appearanceItem = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
+        appearanceItem.submenu = buildAppearanceMenu()
+        menu.addItem(appearanceItem)
+
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit rtr", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         for item in menu.items { item.target = self }
         menu.item(withTitle: "Quit rtr")?.target = NSApp
         statusItem.menu = menu
+    }
+
+    private func buildAppearanceMenu() -> NSMenu {
+        let submenu = NSMenu()
+        appearanceMenuItems.removeAll()
+        for mode in AppearanceMode.allCases {
+            let item = NSMenuItem(title: mode.menuLabel,
+                                  action: #selector(selectAppearance(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            submenu.addItem(item)
+            appearanceMenuItems[mode] = item
+        }
+        refreshAppearanceMenuState()
+        return submenu
+    }
+
+    private func refreshAppearanceMenuState() {
+        let current = Theme.mode
+        for (mode, item) in appearanceMenuItems {
+            item.state = (mode == current) ? .on : .off
+        }
+    }
+
+    @objc private func selectAppearance(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let mode = AppearanceMode(rawValue: raw) else { return }
+        Theme.mode = mode
+        refreshAppearanceMenuState()
     }
 
     @objc private func openStats() {

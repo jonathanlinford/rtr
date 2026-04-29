@@ -117,17 +117,15 @@ final class PickerContentView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.cornerRadius = 16
-        layer?.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 0.96).cgColor
         layer?.borderWidth = 1
-        layer?.borderColor = NSColor(calibratedWhite: 1.0, alpha: 0.1).cgColor
 
         headerFavicon.imageScaling = .scaleProportionallyDown
         headerFavicon.translatesAutoresizingMaskIntoConstraints = false
-        headerFavicon.contentTintColor = NSColor(calibratedWhite: 1, alpha: 0.55)
+        headerFavicon.contentTintColor = Theme.placeholderTint
         headerFavicon.image = Self.placeholderFavicon
 
         headerURL.font = .systemFont(ofSize: 13, weight: .medium)
-        headerURL.textColor = .white
+        headerURL.textColor = Theme.primaryText
         headerURL.lineBreakMode = .byTruncatingMiddle
         headerURL.maximumNumberOfLines = 1
         headerURL.cell?.usesSingleLineMode = true
@@ -138,11 +136,11 @@ final class PickerContentView: NSView {
         headerURL.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         headerSource.font = .systemFont(ofSize: 11)
-        headerSource.textColor = NSColor(calibratedWhite: 1, alpha: 0.6)
+        headerSource.textColor = Theme.secondaryText
         headerSource.translatesAutoresizingMaskIntoConstraints = false
 
         hint.font = .systemFont(ofSize: 10)
-        hint.textColor = NSColor(calibratedWhite: 1, alpha: 0.4)
+        hint.textColor = Theme.quaternaryText
         hint.stringValue = "↑↓/⇥ move • ⏎ open • ⎋ cancel • 1–9 hotkey"
         hint.translatesAutoresizingMaskIntoConstraints = false
 
@@ -201,11 +199,27 @@ final class PickerContentView: NSView {
             hint.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
             hint.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16)
         ])
+
+        applyTheme()
+        NotificationCenter.default.addObserver(self, selector: #selector(themeChanged),
+                                               name: Theme.appearanceDidChange, object: nil)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override var acceptsFirstResponder: Bool { true }
+
+    @objc private func themeChanged() { applyTheme() }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyTheme()
+    }
+
+    private func applyTheme() {
+        layer?.backgroundColor = Theme.panelBackground.cgColor(for: effectiveAppearance)
+        layer?.borderColor = Theme.panelBorder.cgColor(for: effectiveAppearance)
+    }
 
     func configure(url: URL, sourceBundleID: String?, groups: [BrowserGroup]) {
         currentURL = url
@@ -366,7 +380,7 @@ final class BrowserRowView: NSView {
 
         hotkeyBadge.stringValue = hotkey
         hotkeyBadge.font = .monospacedSystemFont(ofSize: 11, weight: .semibold)
-        hotkeyBadge.textColor = NSColor(calibratedWhite: 1, alpha: 0.5)
+        hotkeyBadge.textColor = Theme.tertiaryText
         hotkeyBadge.alignment = .center
         hotkeyBadge.translatesAutoresizingMaskIntoConstraints = false
 
@@ -376,7 +390,7 @@ final class BrowserRowView: NSView {
 
         nameLabel.stringValue = group.displayName
         nameLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        nameLabel.textColor = .white
+        nameLabel.textColor = Theme.primaryText
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
 
         button.title = ""
@@ -476,8 +490,20 @@ final class BrowserRowView: NSView {
     }
 
     private func updateAppearance() {
-        let alpha: CGFloat = isSelected ? 0.14 : (isHovering ? 0.08 : 0.0)
-        layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: alpha).cgColor
+        let color: NSColor
+        if isSelected {
+            color = Theme.rowSelectedBackground
+        } else if isHovering {
+            color = Theme.rowHoverBackground
+        } else {
+            color = .clear
+        }
+        layer?.backgroundColor = color.cgColor(for: effectiveAppearance)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
     }
 
     @objc private func rowClicked() { trigger() }
@@ -552,7 +578,7 @@ final class ProfilePill: NSControl {
         updateAppearance()
 
         label.font = .systemFont(ofSize: 11, weight: .medium)
-        label.textColor = NSColor(calibratedWhite: 1, alpha: 0.9)
+        label.textColor = Theme.pillLabel
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
         label.maximumNumberOfLines = 1
@@ -560,7 +586,7 @@ final class ProfilePill: NSControl {
         let cfg = NSImage.SymbolConfiguration(pointSize: 8, weight: .semibold)
         chevron.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
             .withSymbolConfiguration(cfg)
-        chevron.contentTintColor = NSColor(calibratedWhite: 1, alpha: 0.55)
+        chevron.contentTintColor = Theme.placeholderTint
         chevron.translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(label)
@@ -621,10 +647,19 @@ final class ProfilePill: NSControl {
         onSelect?(id)
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
+    }
+
     private func updateAppearance() {
-        let base: CGFloat = isPressed ? 0.22 : (isHovering ? 0.16 : 0.09)
-        layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: base).cgColor
-        layer?.borderColor = NSColor(calibratedWhite: 1, alpha: isHovering ? 0.18 : 0.10).cgColor
+        let bg: NSColor
+        if isPressed { bg = Theme.pillBackgroundPressed }
+        else if isHovering { bg = Theme.pillBackgroundHover }
+        else { bg = Theme.pillBackground }
+        layer?.backgroundColor = bg.cgColor(for: effectiveAppearance)
+        let border = isHovering ? Theme.pillBorderHover : Theme.pillBorder
+        layer?.borderColor = border.cgColor(for: effectiveAppearance)
     }
 }
 
@@ -648,7 +683,7 @@ final class ChipButton: NSControl {
         layer?.borderWidth = 1
 
         label.font = .systemFont(ofSize: 11, weight: .semibold)
-        label.textColor = NSColor(calibratedWhite: 1, alpha: 0.85)
+        label.textColor = Theme.pillLabel
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
 
@@ -677,10 +712,19 @@ final class ChipButton: NSControl {
         isPressed = false
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
+    }
+
     private func updateAppearance() {
-        let base: CGFloat = isPressed ? 0.22 : (isHovering ? 0.16 : 0.09)
-        layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: base).cgColor
-        layer?.borderColor = NSColor(calibratedWhite: 1, alpha: isHovering ? 0.18 : 0.10).cgColor
+        let bg: NSColor
+        if isPressed { bg = Theme.pillBackgroundPressed }
+        else if isHovering { bg = Theme.pillBackgroundHover }
+        else { bg = Theme.pillBackground }
+        layer?.backgroundColor = bg.cgColor(for: effectiveAppearance)
+        let border = isHovering ? Theme.pillBorderHover : Theme.pillBorder
+        layer?.borderColor = border.cgColor(for: effectiveAppearance)
     }
 }
 
@@ -704,9 +748,10 @@ final class RuleFormView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 10
-        layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.04).cgColor
         layer?.borderWidth = 1
-        layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.08).cgColor
+        applyTheme()
+        NotificationCenter.default.addObserver(self, selector: #selector(themeChanged),
+                                               name: Theme.appearanceDidChange, object: nil)
 
         let matchLabel = Self.fieldLabel("Match by")
         let openLabel = Self.fieldLabel("Open in")
@@ -810,10 +855,22 @@ final class RuleFormView: NSView {
         onSave?(matcher, value, browser)
     }
 
+    @objc private func themeChanged() { applyTheme() }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyTheme()
+    }
+
+    private func applyTheme() {
+        layer?.backgroundColor = Theme.formBackground.cgColor(for: effectiveAppearance)
+        layer?.borderColor = Theme.formBorder.cgColor(for: effectiveAppearance)
+    }
+
     private static func fieldLabel(_ text: String) -> NSTextField {
         let f = NSTextField(labelWithString: text)
         f.font = .systemFont(ofSize: 11, weight: .medium)
-        f.textColor = NSColor(calibratedWhite: 1, alpha: 0.55)
+        f.textColor = Theme.secondaryText
         return f
     }
 
@@ -849,13 +906,26 @@ final class RuleTextField: NSTextField, NSTextFieldDelegate {
         isBezeled = false
         drawsBackground = false
         focusRingType = .none
-        textColor = .white
+        textColor = Theme.primaryText
         font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         layer?.cornerRadius = 6
         layer?.borderWidth = 1
-        layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.15).cgColor
-        layer?.backgroundColor = NSColor(calibratedWhite: 0, alpha: 0.35).cgColor
+        applyTheme()
+        NotificationCenter.default.addObserver(self, selector: #selector(themeChanged),
+                                               name: Theme.appearanceDidChange, object: nil)
         delegate = self
+    }
+
+    @objc private func themeChanged() { applyTheme() }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyTheme()
+    }
+
+    private func applyTheme() {
+        layer?.backgroundColor = Theme.textFieldBackground.cgColor(for: effectiveAppearance)
+        layer?.borderColor = Theme.textFieldBorder.cgColor(for: effectiveAppearance)
     }
 
     override func draw(_ dirtyRect: NSRect) {

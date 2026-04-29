@@ -49,7 +49,9 @@ final class StatsContentView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.backgroundColor = NSColor(calibratedWhite: 0.10, alpha: 1.0).cgColor
+        layer?.backgroundColor = Theme.statsBackground.cgColor(for: effectiveAppearance)
+        NotificationCenter.default.addObserver(self, selector: #selector(themeChanged),
+                                               name: Theme.appearanceDidChange, object: nil)
 
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.hasVerticalScroller = true
@@ -83,10 +85,10 @@ final class StatsContentView: NSView {
         ])
 
         header.font = .systemFont(ofSize: 28, weight: .bold)
-        header.textColor = .white
+        header.textColor = Theme.primaryText
 
         subhead.font = .systemFont(ofSize: 12)
-        subhead.textColor = NSColor(calibratedWhite: 1, alpha: 0.55)
+        subhead.textColor = Theme.secondaryText
 
         statsRow.orientation = .horizontal
         statsRow.spacing = 12
@@ -106,6 +108,15 @@ final class StatsContentView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func themeChanged() {
+        layer?.backgroundColor = Theme.statsBackground.cgColor(for: effectiveAppearance)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        themeChanged()
+    }
 
     func update(_ snap: StatsSnapshot) {
         header.stringValue = "\(snap.total) links opened"
@@ -135,16 +146,18 @@ final class StatCard: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 10
-        layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.06).cgColor
         translatesAutoresizingMaskIntoConstraints = false
+        applyTheme()
+        NotificationCenter.default.addObserver(self, selector: #selector(themeChanged),
+                                               name: Theme.appearanceDidChange, object: nil)
 
         let t = NSTextField(labelWithString: title)
         t.font = .systemFont(ofSize: 11, weight: .medium)
-        t.textColor = NSColor(calibratedWhite: 1, alpha: 0.55)
+        t.textColor = Theme.secondaryText
 
         let v = NSTextField(labelWithString: value)
         v.font = .systemFont(ofSize: 26, weight: .bold)
-        v.textColor = .white
+        v.textColor = Theme.primaryText
 
         let s = NSStackView(views: [t, v])
         s.orientation = .vertical
@@ -163,6 +176,17 @@ final class StatCard: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func themeChanged() { applyTheme() }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyTheme()
+    }
+
+    private func applyTheme() {
+        layer?.backgroundColor = Theme.statsCardBackground.cgColor(for: effectiveAppearance)
+    }
 }
 
 final class BarSection: NSView {
@@ -172,7 +196,7 @@ final class BarSection: NSView {
 
         let t = NSTextField(labelWithString: title.uppercased())
         t.font = .systemFont(ofSize: 10, weight: .semibold)
-        t.textColor = NSColor(calibratedWhite: 1, alpha: 0.5)
+        t.textColor = Theme.tertiaryText
 
         let container = NSStackView()
         container.orientation = .vertical
@@ -184,7 +208,7 @@ final class BarSection: NSView {
         if buckets.isEmpty {
             let empty = NSTextField(labelWithString: "No data yet.")
             empty.font = .systemFont(ofSize: 12)
-            empty.textColor = NSColor(calibratedWhite: 1, alpha: 0.35)
+            empty.textColor = Theme.quaternaryText
             container.addArrangedSubview(empty)
         } else {
             for bucket in buckets {
@@ -238,14 +262,14 @@ final class BarRow: NSView {
         labelField.font = monospaced
             ? .monospacedSystemFont(ofSize: 11, weight: .regular)
             : .systemFont(ofSize: 12)
-        labelField.textColor = .white
+        labelField.textColor = Theme.primaryText
         labelField.lineBreakMode = .byTruncatingMiddle
         labelField.maximumNumberOfLines = 1
         labelField.translatesAutoresizingMaskIntoConstraints = false
 
         let countField = NSTextField(labelWithString: "\(count)")
         countField.font = .monospacedSystemFont(ofSize: 11, weight: .semibold)
-        countField.textColor = NSColor(calibratedWhite: 1, alpha: 0.7)
+        countField.textColor = Theme.secondaryText
         countField.alignment = .right
         countField.translatesAutoresizingMaskIntoConstraints = false
 
