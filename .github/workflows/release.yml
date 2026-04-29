@@ -22,7 +22,7 @@ jobs:
     name: Build & release rtr.app
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
@@ -56,7 +56,7 @@ jobs:
           ditto -c -k --keepParent rtr.app rtr-${{ steps.version.outputs.version }}.zip
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rtr-${{ steps.version.outputs.version }}
           path: build/rtr-${{ steps.version.outputs.version }}.zip
