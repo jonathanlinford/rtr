@@ -28,6 +28,29 @@ struct DeepLinksTests {
         #expect(items["message"] == "1700000000.123456")
     }
 
+    @Test func slackUsesResolvedTeamIDNotSubdomain() throws {
+        // The slack:// scheme requires the team ID (T…); the subdomain alone doesn't navigate.
+        let url = URL(string: "https://heyhalda.slack.com/archives/C03QJUCA4CC/p1779142039159159")!
+        let out = try #require(rtr.slackRewrite(url) { sub in
+            sub == "heyhalda" ? "T7H6W50RX" : nil
+        })
+        let items = Dictionary(uniqueKeysWithValues:
+            (URLComponents(url: out, resolvingAgainstBaseURL: false)?.queryItems ?? [])
+                .map { ($0.name, $0.value ?? "") })
+        #expect(items["team"] == "T7H6W50RX")
+        #expect(items["id"] == "C03QJUCA4CC")
+        #expect(items["message"] == "1779142039.159159")
+    }
+
+    @Test func slackFallsBackToSubdomainWhenTeamIDUnresolved() throws {
+        let url = URL(string: "https://acme.slack.com/archives/C0123ABCD/p1700000000123456")!
+        let out = try #require(rtr.slackRewrite(url) { _ in nil })
+        let items = Dictionary(uniqueKeysWithValues:
+            (URLComponents(url: out, resolvingAgainstBaseURL: false)?.queryItems ?? [])
+                .map { ($0.name, $0.value ?? "") })
+        #expect(items["team"] == "acme")
+    }
+
     @Test func slackThreadTimestampPreserved() throws {
         let url = URL(string: "https://acme.slack.com/archives/C0123ABCD/p1700000000123456?thread_ts=1699000000.111111")!
         let out = try #require(handler(named: "Slack").rewrite(url))

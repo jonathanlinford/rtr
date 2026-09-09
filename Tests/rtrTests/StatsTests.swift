@@ -165,7 +165,117 @@ struct StatsTests {
         // above using seedAggregates — testing that here would race with start()'s async warmup.)
     }
 
+    // MARK: - splitBrowserName
+
+    @Test func splitsBrowserNameIntoBaseAndProfile() {
+        #expect(splitBrowserName("Google Chrome — Work").base == "Google Chrome")
+        #expect(splitBrowserName("Google Chrome — Work").profile == "Work")
+        #expect(splitBrowserName("Safari").base == "Safari")
+        #expect(splitBrowserName("Safari").profile == nil)
+    }
+
+    // MARK: - bundle / profile rollups
+
+    @Test func snapshotRollsUpBundlesAndProfiles() {
+        let now = Date().timeIntervalSince1970
+        let entries = [
+            entry(t: now, browserID: "com.google.Chrome#Default", name: "Google Chrome — Work"),
+            entry(t: now, browserID: "com.google.Chrome#Profile 1", name: "Google Chrome — Work"),
+            entry(t: now, browserID: "com.google.Chrome#Profile 2", name: "Google Chrome — Personal"),
+            entry(t: now, browserID: "com.apple.Safari", name: "Safari"),
+        ]
+        let snap = StatsSnapshot.from(entries)
+
+        // Bundle: Chrome rolled up across profiles = 3, Safari = 1.
+        let bundle = Dictionary(uniqueKeysWithValues: snap.byBundle.map { ($0.key, $0.count) })
+        #expect(bundle["Google Chrome"] == 3)
+        #expect(bundle["Safari"] == 1)
+
+        // Profiles: Work 2, Personal 1. Safari (no profile) absent.
+        let profile = Dictionary(uniqueKeysWithValues: snap.byProfile.map { ($0.key, $0.count) })
+        #expect(profile["Work"] == 2)
+        #expect(profile["Personal"] == 1)
+        #expect(profile["Safari"] == nil)
+    }
+
+    // MARK: - time of day
+
+    @Test func snapshotBucketsByHourAndWeekday() {
+        // 2024-01-01 is a Monday (Calendar weekday 2 → index 1).
+        let entries = [
+            timedEntry(2024, 1, 1, 9),   // Mon 09:00
+            timedEntry(2024, 1, 1, 9),   // Mon 09:00
+            timedEntry(2024, 1, 1, 14),  // Mon 14:00
+            timedEntry(2024, 1, 6, 22),  // Sat 22:00
+        ]
+        let snap = StatsSnapshot.from(entries)
+
+        #expect(snap.byHour[9] == 2)
+        #expect(snap.byHour[14] == 1)
+        #expect(snap.byHour[22] == 1)
+        #expect(snap.busiestHour?.hour == 9)
+        #expect(snap.busiestHour?.count == 2)
+
+        #expect(snap.byWeekday[1] == 3)   // Monday
+        #expect(snap.byWeekday[6] == 1)   // Saturday
+        #expect(snap.weekdayCount == 3)
+        #expect(snap.weekendCount == 1)
+
+        #expect(snap.heatmap[1][9] == 2)  // Mon × 09:00
+        #expect(snap.heatmap[6][22] == 1) // Sat × 22:00
+    }
+
+    // MARK: - streaks & fun stats
+
+    @Test func snapshotComputesStreaksAndBusiestDay() {
+        let entries = [
+            timedEntry(2024, 3, 1, 10),
+            timedEntry(2024, 3, 2, 10),
+            timedEntry(2024, 3, 3, 10),
+            timedEntry(2024, 3, 3, 11),   // busiest day (2 links)
+            // gap on the 4th
+            timedEntry(2024, 3, 5, 10),
+            timedEntry(2024, 3, 6, 10),
+        ]
+        let snap = StatsSnapshot.from(entries)
+
+        #expect(snap.activeDays == 5)
+        #expect(snap.longestStreak == 3)   // Mar 1–3
+        #expect(snap.currentStreak == 2)   // Mar 5–6
+
+        let cal = Calendar.current
+        let busiest = snap.busiestDay
+        #expect(busiest?.count == 2)
+        #expect(busiest.map { cal.component(.day, from: $0.day) } == 3)
+
+        #expect(abs(snap.avgPerActiveDay - 6.0 / 5.0) < 0.0001)
+    }
+
+    @Test func snapshotFindsFavoriteCombo() {
+        let now = Date().timeIntervalSince1970
+        let entries = [
+            StatEntry(t: now, url: "https://github.com/a", host: "github.com",
+                      browserID: "id", browserName: "Chrome — Work", sourceApp: nil, ruleMatched: false),
+            StatEntry(t: now, url: "https://github.com/b", host: "github.com",
+                      browserID: "id", browserName: "Chrome — Work", sourceApp: nil, ruleMatched: false),
+            StatEntry(t: now, url: "https://news.com", host: "news.com",
+                      browserID: "id2", browserName: "Safari", sourceApp: nil, ruleMatched: false),
+        ]
+        let snap = StatsSnapshot.from(entries)
+        #expect(snap.favoriteCombo?.browser == "Chrome — Work")
+        #expect(snap.favoriteCombo?.host == "github.com")
+        #expect(snap.favoriteCombo?.count == 2)
+    }
+
     // MARK: - helpers
+
+    private func timedEntry(_ y: Int, _ mo: Int, _ d: Int, _ h: Int) -> StatEntry {
+        var c = DateComponents()
+        c.year = y; c.month = mo; c.day = d; c.hour = h; c.minute = 0
+        let t = Calendar.current.date(from: c)!.timeIntervalSince1970
+        return StatEntry(t: t, url: "https://x.com", host: "x.com",
+                         browserID: "id", browserName: "Chrome", sourceApp: nil, ruleMatched: false)
+    }
 
     private func tempDir() -> URL {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -177,6 +287,12 @@ struct StatsTests {
     private func entry(t: TimeInterval, browserID: String) -> StatEntry {
         StatEntry(t: t, url: "u", host: "h",
                   browserID: browserID, browserName: browserID,
+                  sourceApp: nil, ruleMatched: false)
+    }
+
+    private func entry(t: TimeInterval, browserID: String, name: String) -> StatEntry {
+        StatEntry(t: t, url: "u", host: "h",
+                  browserID: browserID, browserName: name,
                   sourceApp: nil, ruleMatched: false)
     }
 }

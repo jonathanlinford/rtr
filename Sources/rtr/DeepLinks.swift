@@ -65,9 +65,57 @@ enum DeepLinks {
 
 // MARK: - Per-service rewriters
 
+/// Resolves a workspace subdomain (e.g. "heyhalda") to its Slack team ID (e.g. "T7H6W50RX")
+/// by reading Slack's local app state. The `slack://` scheme's `team` parameter requires the
+/// team ID, not the subdomain — passing the subdomain makes Slack surface without navigating.
+enum SlackTeams {
+    private static let stateURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/Slack/storage/root-state.json")
+
+    // Cache the parsed map keyed by the file's mtime so a workspace add/remove is picked up
+    // without re-parsing on every click.
+    private static var cache: (mtime: Date, map: [String: String])?
+
+    /// Returns the team ID for a subdomain, or nil if Slack isn't installed, the state file's
+    /// moved, or that workspace isn't signed in.
+    static func teamID(forSubdomain subdomain: String) -> String? {
+        loadMap()?[subdomain.lowercased()]
+    }
+
+    private static func loadMap() -> [String: String]? {
+        let path = stateURL.path
+        guard let mtime = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+        else { return cache?.map }
+        if let c = cache, c.mtime == mtime { return c.map }
+
+        guard let data = try? Data(contentsOf: stateURL),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let workspaces = root["workspaces"] as? [String: Any]
+        else { return cache?.map }
+
+        var map: [String: String] = [:]
+        for entry in workspaces.values {
+            guard let dict = entry as? [String: Any],
+                  let domain = dict["domain"] as? String,
+                  let id = dict["id"] as? String else { continue }
+            map[domain.lowercased()] = id
+        }
+        cache = (mtime, map)
+        return map
+    }
+}
+
 private func slackRewrite(_ url: URL) -> URL? {
+    slackRewrite(url, resolveTeamID: SlackTeams.teamID(forSubdomain:))
+}
+
+/// Injectable core so the team-ID lookup can be stubbed in tests.
+func slackRewrite(_ url: URL, resolveTeamID: (String) -> String?) -> URL? {
     guard let host = url.host, host.hasSuffix(".slack.com") else { return nil }
-    let team = String(host.dropLast(".slack.com".count))
+    let subdomain = String(host.dropLast(".slack.com".count))
+    // Slack needs the team ID; fall back to the subdomain (opens the app, no navigation) only
+    // when we can't resolve it — no worse than before.
+    let team = resolveTeamID(subdomain) ?? subdomain
 
     var comp = URLComponents()
     comp.scheme = "slack"
