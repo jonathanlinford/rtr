@@ -1,11 +1,15 @@
 import AppKit
 import ServiceManagement
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var picker: PickerWindowController!
     private var statsWindow: StatsWindowController?
     private var statusItem: NSStatusItem!
     private var loginItemMenuItem: NSMenuItem?
+    private var profileDisplayMenuItems: [ProfileDisplayMode: NSMenuItem] = [:]
+    private var summaryTodayItem: NSMenuItem?
+    private var summaryBrowserItem: NSMenuItem?
+    private var summaryDomainItem: NSMenuItem?
 
     private let loginItemRegisteredKey = "rtr.loginItemRegistered"
 
@@ -31,7 +35,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         autoEnableLoginItemOnFirstRun()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(statsDidChange),
+            name: Stats.didRecordNotification, object: nil)
+        updateStatusBadge()
     }
+
+    @objc private func statsDidChange() { updateStatusBadge() }
 
     // MARK: - Login item
 
@@ -142,6 +152,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.toolTip = "rtr"
         }
         let menu = NSMenu()
+        menu.delegate = self
+
+        // Light stats header (non-interactive, refreshed on open).
+        let today = makeInfoItem()
+        let browser = makeInfoItem()
+        let domain = makeInfoItem()
+        summaryTodayItem = today
+        summaryBrowserItem = browser
+        summaryDomainItem = domain
+        menu.addItem(today)
+        menu.addItem(browser)
+        menu.addItem(domain)
+        menu.addItem(NSMenuItem.separator())
+
         menu.addItem(NSMenuItem(title: "Open Stats…", action: #selector(openStats), keyEquivalent: "s"))
         menu.addItem(NSMenuItem(title: "Edit Config", action: #selector(editConfig), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r"))
@@ -150,11 +174,109 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let loginToggle = NSMenuItem(title: "Launch at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
         menu.addItem(loginToggle)
         loginItemMenuItem = loginToggle
+
+        let profileItem = NSMenuItem(title: "Chrome Profiles", action: nil, keyEquivalent: "")
+        profileItem.submenu = buildProfileDisplayMenu()
+        menu.addItem(profileItem)
+
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit rtr", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         for item in menu.items { item.target = self }
         menu.item(withTitle: "Quit rtr")?.target = NSApp
         statusItem.menu = menu
+    }
+
+    private func buildProfileDisplayMenu() -> NSMenu {
+        let submenu = NSMenu()
+        profileDisplayMenuItems.removeAll()
+        for mode in ProfileDisplayMode.allCases {
+            let item = NSMenuItem(title: mode.menuLabel,
+                                  action: #selector(selectProfileDisplay(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            submenu.addItem(item)
+            profileDisplayMenuItems[mode] = item
+        }
+        refreshProfileDisplayMenuState()
+        return submenu
+    }
+
+    private func refreshProfileDisplayMenuState() {
+        let current = Settings.profileDisplay
+        for (mode, item) in profileDisplayMenuItems {
+            item.state = (mode == current) ? .on : .off
+        }
+    }
+
+    @objc private func selectProfileDisplay(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let mode = ProfileDisplayMode(rawValue: raw) else { return }
+        Settings.profileDisplay = mode
+        BrowserCatalog.shared.refresh()
+        refreshProfileDisplayMenuState()
+    }
+
+    // MARK: - Menubar light stats
+
+    private func makeInfoItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }
+
+    /// Refresh the count badge shown next to the menubar icon.
+    private func updateStatusBadge() {
+        guard let button = statusItem?.button else { return }
+        let count = Stats.shared.menubarSummary().todayCount
+        button.imagePosition = .imageLeading
+        button.font = .systemFont(ofSize: 11, weight: .medium)
+        button.title = count > 0 ? " \(count)" : ""
+        button.toolTip = count > 0 ? "rtr — \(count) links today" : "rtr"
+    }
+
+    /// Refresh the today-summary rows at the top of the dropdown menu.
+    private func refreshStatsSummary() {
+        let s = Stats.shared.menubarSummary()
+
+        func styled(_ text: String, secondary: Bool) -> NSAttributedString {
+            NSAttributedString(string: text, attributes: [
+                .font: NSFont.systemFont(ofSize: secondary ? 11 : 12,
+                                         weight: secondary ? .regular : .semibold),
+                .foregroundColor: secondary ? NSColor.secondaryLabelColor : NSColor.labelColor,
+            ])
+        }
+
+        func truncate(_ s: String, _ n: Int) -> String {
+            s.count <= n ? s : String(s.prefix(n - 1)) + "…"
+        }
+
+        summaryTodayItem?.attributedTitle = styled(
+            s.todayCount == 0 ? "No links opened today"
+                              : "Today: \(s.todayCount) link\(s.todayCount == 1 ? "" : "s")",
+            secondary: false)
+
+        if let b = s.topBrowser {
+            summaryBrowserItem?.attributedTitle =
+                styled("Top: \(truncate(b.name, 28)) (\(b.count))", secondary: true)
+            summaryBrowserItem?.isHidden = false
+        } else {
+            summaryBrowserItem?.isHidden = true
+        }
+
+        if let d = s.topDomain {
+            summaryDomainItem?.attributedTitle =
+                styled("Top domain: \(truncate(d.name, 28))", secondary: true)
+            summaryDomainItem?.isHidden = false
+        } else {
+            summaryDomainItem?.isHidden = true
+        }
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        refreshStatsSummary()
+        updateLoginItemMenuState()
+        refreshProfileDisplayMenuState()
     }
 
     @objc private func openStats() {
